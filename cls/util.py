@@ -28,6 +28,7 @@ def Delta(tensor):
         delta = 0.75 * torch.sum(tensor.abs(), dim=(1,2,3))/n
     elif(len(tensor.size()) == 2):   #fc layer
         delta = 0.75 * torch.sum(tensor.abs(), dim=(1,))/n
+        print(1/0)
     return delta
 
 def Binarize(tensor):
@@ -43,15 +44,23 @@ def Binarize(tensor):
     return output
 
 def Ternarize(tensor):
-    output = torch.zeros(tensor.size(), device=tensor.device)
-    delta = Delta(tensor)
-    alpha = Alpha(tensor,delta)
-    for i in range(tensor.size()[0]):
-        pos_one = (tensor[i] > delta[i]).to(torch.float32)
-        neg_one = -1 * (tensor[i] < -delta[i]).to(torch.float32)
-        out = torch.add(pos_one, neg_one)
-        output[i] = torch.add(output[i],torch.mul(out, alpha[i]))
-    return output
+    # output = torch.zeros(tensor.size(), device=tensor.device)
+    # delta = Delta(tensor)
+    # alpha = Alpha(tensor,delta)
+    # for i in range(tensor.size()[0]):
+    #     pos_one = (tensor[i] > delta[i]).to(torch.float32)
+    #     neg_one = -1 * (tensor[i] < -delta[i]).to(torch.float32)
+    #     out = torch.add(pos_one, neg_one)
+    #     output[i] = torch.add(output[i],torch.mul(out, alpha[i]))
+
+    delta2 = Delta(tensor)
+    absw = torch.abs(tensor)
+    Iw = absw > delta2[:, None, None, None]
+    alpha2 = (1/torch.sum(Iw, dim=(1, 2, 3)))*(torch.sum(absw * Iw, dim=(1, 2, 3)))
+    w_ = 1*(tensor > delta2[:, None, None, None]) + (-1)*(tensor < -delta2[:, None, None, None])
+    output2 = alpha2[:, None, None, None] * w_
+    # diff = torch.sum(torch.abs(output - output2))
+    return output2
             
             
 class Conv2DFunctionQUAN(torch.autograd.Function):

@@ -9,6 +9,11 @@ from resnet import ResNet18_TWNs, ResNet18B_TWNs, ResNet18_BPWNs, ResNet18B_BPWN
 import litenet as QUANWNS
 import util as U
 
+TEST_BATCH_SIZE = None
+BATCH_SIZE = None
+kwargs = None
+args = None
+
 def get_dataloader(dataset, data_path):
     if dataset == 'imagenet':
         imagenet_data = datasets.ImageNet(data_path)
@@ -166,10 +171,15 @@ def ParseArgs():
     return args
 
 def main():
+    global TEST_BATCH_SIZE
+    global BATCH_SIZE
+    global kwargs
+    global args
+
     args = ParseArgs()
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
-    kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
+    kwargs = {'num_workers': 20, 'pin_memory': True} if args.cuda else {}
 
     logf = open(args.log_file_prefix+'_'+args.quan_mode+'.log', 'w')
     
@@ -190,17 +200,21 @@ def main():
     if args.cuda:
         criterion.cuda()
     
-    optimizer = optim.SGD(model.parameters(),lr=learning_rate,momentum=momentum)
-    #optimizer = optim.Adam(model.parameters(),lr=learning_rate,weight_decay=weight_decay)
+    optimizer = optim.SGD(model.parameters(),lr=learning_rate,momentum=momentum, weight_decay=weight_decay)
+    # optimizer = optim.Adam(model.parameters(),lr=learning_rate,weight_decay=weight_decay)
     
     best_acc = 0.0 
     for epoch_index in range(1,args.epochs+1):
+        if epoch_index == 80 or epoch_index == 120:
+            learning_rate /= 10
         lr=adjust_learning_rate(learning_rate,optimizer,epoch_index,args.lr_epochs)
         train(args,epoch_index,train_loader,model,optimizer,criterion,lr, logf)
-        acc = test(args,model,test_loader,criterion, logf)
-        if acc > best_acc:
-            best_acc = acc
-            U.save_model(model,best_acc,args.quan_mode)
+
+        if epoch_index % 10 == 0:
+            acc = test(args,model,test_loader,criterion, logf)
+            if acc > best_acc:
+                best_acc = acc
+                U.save_model(model,best_acc,args.quan_mode)
             
     logf.write("best_acc: "+str(best_acc)+'\n')
     logf.close()
