@@ -180,7 +180,7 @@ def main():
     args = ParseArgs()
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
-    kwargs = {'num_workers': 20, 'pin_memory': True} if args.cuda else {}
+    kwargs = {'num_workers': 0, 'pin_memory': True} if args.cuda else {}
 
     logf = open(args.log_file_prefix+'_'+args.quan_mode+'.log', 'w')
     

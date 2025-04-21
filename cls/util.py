@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from paddle.base.libpaddle.eager.ops.legacy import momentum
 
 
 def Alpha(tensor, delta):
@@ -103,7 +104,40 @@ class Conv2DFunctionQUAN(torch.autograd.Function):
         
         return grad_input, grad_weight, grad_bias, grad_stride, grad_padding, grad_dilation, grad_groups, None
 
-    
+class WeightNetwork(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.a1 = nn.Conv2d(in_channels, in_channels, 2, stride=1, padding=0, dilation=1, groups=1, bias=True)
+        self.a2 = nn.BatchNorm2d(num_features=in_channels)
+        self.a3 = nn.LeakyReLU()
+        self.a4 = nn.Conv2d(in_channels, in_channels, 2, stride=1, padding=0, dilation=1, groups=1, bias=True)
+        self.a5 = nn.BatchNorm2d(num_features=in_channels)
+        self.a6 = nn.LeakyReLU()
+        self.a7 = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=3, padding=0, dilation=1, groups=1, bias=True)
+        self.a8 = nn.BatchNorm2d(num_features=in_channels)
+        self.a9 = nn.Tanh()
+
+        self.a10 = nn.Flatten()
+        self.a11 = nn.Linear(in_channels*3*3, 1, bias=True)
+        self.a12 = nn.Flatten(start_dim=0)
+        self.a13 = nn.Sigmoid()
+
+    def forward(self, x):
+        y = self.a1(x)
+        y = self.a2(y)
+        y = self.a3(y)
+        y = self.a4(y)
+        y = self.a5(y)
+        y = self.a6(y)
+        y = self.a7(y)
+        y = self.a8(y)
+        o1 = self.a9(y)
+        y = self.a10(o1)
+        y = self.a11(y)
+        y = self.a12(y)
+        o2 = self.a13(y)
+        return o1, o2
+
 class TernaryConv2d(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
         super(TernaryConv2d, self).__init__(in_channels, out_channels, kernel_size, stride=stride, padding=padding,
@@ -116,18 +150,7 @@ class TernaryConv2d(nn.Conv2d):
         self.lossn_track = []
         tensor = self.weight.clone().detach()
         if tensor.shape[2] != 1:
-            self.alpha_delta_network = nn.Sequential(
-                nn.Conv2d(in_channels, 4*in_channels, 2, stride=1, padding=0, dilation=dilation, groups=groups, bias=bias),
-                nn.BatchNorm2d(num_features=4*in_channels),
-                nn.LeakyReLU(),
-                nn.Conv2d(4*in_channels, 4*in_channels, 2, stride=1, padding=0, dilation=dilation, groups=groups, bias=bias),
-                nn.BatchNorm2d(num_features=4*in_channels),
-                nn.LeakyReLU(),
-                nn.Flatten(start_dim=1, end_dim=3),
-                nn.Linear(4*in_channels, 2, bias),
-                nn.BatchNorm1d(num_features=2),
-                nn.LeakyReLU()
-                )
+            self.alpha_delta_network = WeightNetwork(in_channels)
         else:
             self.alpha_delta_network = nn.Sequential(
                 nn.Linear(in_channels, in_channels, bias=bias),
@@ -145,21 +168,21 @@ class TernaryConv2d(nn.Conv2d):
         # else:
         #     out2 = self.alpha_delta_network(torch.flatten(tensor, start_dim=1, end_dim=3))
         # print("")
+        self.epsilon = 0.01
 
-    def fw_(self, x, delta):
-        epsilon = 0.1
-        v1 = x * (epsilon / delta)
-        v2 = (x + delta) * (epsilon / delta) + (-1 + epsilon)
-        v3 = (x - delta) * (epsilon / delta) + (1 - epsilon)
+    def fw_(self, x):
+        _x = 3 * x
+        v1 = _x * self.epsilon
+        v2 = (_x + 0.5) * (self.epsilon) + (-1 + self.epsilon / 2)
+        v3 = (_x - 0.5) * (self.epsilon) + (1 - self.epsilon / 2)
+        return torch.logical_and(_x >= -0.5, _x <= 0.5) * v1 + (_x < -0.5) * v2 + (_x > 0.5) * v3
 
-        return torch.logical_and(x >= -delta, x <= delta) * v1 + (x < -delta) * v2 + (x > delta) * v3
-
-        # if x >= -delta and x <= delta:
-        #     return x * (epsilon / delta)
-        # elif x < -delta:
-        #     return (x + delta) * (epsilon / (delta)) + (-1 + epsilon)
-        # elif x > delta:
-        #     return (x - delta) * (epsilon / (delta)) + (1 - epsilon)
+        # if x >= -0.5 and x <= 0.5:
+        #     return x * (epsilon)
+        # elif x < -0.5:
+        #     return (x + 0.5) * (epsilon) + (-1 + epsilon / 2)
+        # elif x > 0.5:
+        #     return (x - 0.5) * (epsilon) + (1 - epsilon / 2)
 
     def forward(self, x):
         tensor = self.weight.clone().detach()
@@ -179,20 +202,22 @@ class TernaryConv2d(nn.Conv2d):
         down = torch.amin(tensor, dim=(1, 2, 3))
         rangew = up - down
         self.alpha_delta_network.requires_grad_(True)
+        break_var = False
         for i in range(200000 if tensor.shape[2] != 1 else 20):
             self.optimizer.zero_grad()
             if tensor.shape[2] != 1:
-                alpha_delta = self.alpha_delta_network(tensor)
+                w, alpha2 = self.alpha_delta_network(tensor)
             else:
                 alpha_delta = self.alpha_delta_network(torch.flatten(tensor, start_dim=1, end_dim=3))
-            alpha2, delta2 = alpha_delta[:, 0], torch.abs(alpha_delta[:, 1])
-            # w_ = 1 * (tensor > delta2[:, None, None, None]) + (-1) * (tensor < -delta2[:, None, None, None])
-            w_ = self.fw_(tensor, delta2[:, None, None, None])
-            output2 = alpha2[:, None, None, None] * w_
-            loss = torch.sqrt(torch.sum((tensor - output2)**2)) + torch.sum((torch.abs(output2) > 1)*torch.abs(output2)) + 10*torch.sum((torch.abs(alpha2) > 0.1)*torch.abs(alpha2))
+            w_ = self.fw_(w)
+            # output2 = (alpha2 * rangew / (2 + self.epsilon))[:, None, None, None] * w_
+            output2 = (alpha2 * 4)[:, None, None, None] * w_
+            loss = torch.sqrt(torch.sum((tensor - output2)**2))
             print(f"i: {i}, loss: {loss.item()}")
             loss.backward()
             self.optimizer.step()
+            if break_var:
+                break
         self.alpha_delta_network.requires_grad_(False)
 
         # range_cover_by_alpha = alpha2[0] * (0.1 / 2 + (up[0] - delta2[0]) * (0.1 / delta2[0])) + alpha2[0] * ( 0.1 / 2 + (delta2[0] - down[0]) * (0.1 / delta2[0]))
