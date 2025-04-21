@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torchvision.models
 from torch.autograd import Variable
 from torchvision import datasets, transforms
 import argparse
@@ -229,6 +230,7 @@ def train(args,epoch_index,train_loader,model,optimizer,criterion, lr=None, logf
         optimizer.zero_grad()
 
         output = model(data)
+        print("================================")
         loss = criterion(output,target)
         loss.backward()
 
