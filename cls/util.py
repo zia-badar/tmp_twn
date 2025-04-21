@@ -107,14 +107,26 @@ class Conv2DFunctionQUAN(torch.autograd.Function):
 class WeightNetwork(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
-        self.a1 = nn.Conv2d(in_channels, in_channels, 2, stride=1, padding=0, dilation=1, groups=1, bias=True)
-        self.a2 = nn.BatchNorm2d(num_features=in_channels)
-        self.a3 = nn.LeakyReLU()
-        self.a4 = nn.Conv2d(in_channels, in_channels, 2, stride=1, padding=0, dilation=1, groups=1, bias=True)
-        self.a5 = nn.BatchNorm2d(num_features=in_channels)
-        self.a6 = nn.LeakyReLU()
-        self.a7 = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=3, padding=0, dilation=1, groups=1, bias=True)
-        self.a8 = nn.BatchNorm2d(num_features=in_channels)
+        self.in_channels = in_channels
+        self.a1 = nn.Flatten()
+        self.a2 = nn.Linear(in_channels*3*3, out_features=4*in_channels*3*3, bias=True)
+        self.a3 = nn.BatchNorm1d(num_features=4*in_channels*3*3)
+        self.a4 = nn.LeakyReLU()
+        self.a41 = nn.Linear(4*in_channels*3*3, out_features=4*in_channels*3*3, bias=True)
+        self.a42 = nn.BatchNorm1d(num_features=4*in_channels*3*3)
+        self.a43 = nn.LeakyReLU()
+        self.a5 = nn.Linear(4*in_channels*3*3, out_features=in_channels*3*3, bias=True)
+        self.a6 = nn.BatchNorm1d(num_features=in_channels*3*3)
+        self.a7 = nn.LeakyReLU()
+
+        # self.a1 = nn.Conv2d(in_channels, in_channels, 2, stride=1, padding=0, dilation=1, groups=1, bias=True)
+        # self.a2 = nn.BatchNorm2d(num_features=in_channels)
+        # self.a3 = nn.LeakyReLU()
+        # self.a4 = nn.Conv2d(in_channels, in_channels, 2, stride=1, padding=0, dilation=1, groups=1, bias=True)
+        # self.a5 = nn.BatchNorm2d(num_features=in_channels)
+        # self.a6 = nn.LeakyReLU()
+        # self.a7 = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=3, padding=0, dilation=1, groups=1, bias=True)
+        # self.a8 = nn.BatchNorm2d(num_features=in_channels)
         self.a9 = nn.Tanh()
 
         self.a10 = nn.Flatten()
@@ -127,10 +139,14 @@ class WeightNetwork(nn.Module):
         y = self.a2(y)
         y = self.a3(y)
         y = self.a4(y)
+        y = self.a41(y)
+        y = self.a42(y)
+        y = self.a43(y)
         y = self.a5(y)
         y = self.a6(y)
         y = self.a7(y)
-        y = self.a8(y)
+        # y = self.a8(y)
+        y = y.reshape(x.shape[0], self.in_channels, 3, 3)
         o1 = self.a9(y)
         y = self.a10(o1)
         y = self.a11(y)
@@ -168,7 +184,7 @@ class TernaryConv2d(nn.Conv2d):
         # else:
         #     out2 = self.alpha_delta_network(torch.flatten(tensor, start_dim=1, end_dim=3))
         # print("")
-        self.epsilon = 0.01
+        self.epsilon = 0.4
 
     def fw_(self, x):
         _x = 3 * x
@@ -211,7 +227,7 @@ class TernaryConv2d(nn.Conv2d):
                 alpha_delta = self.alpha_delta_network(torch.flatten(tensor, start_dim=1, end_dim=3))
             w_ = self.fw_(w)
             # output2 = (alpha2 * rangew / (2 + self.epsilon))[:, None, None, None] * w_
-            output2 = (alpha2 * 4)[:, None, None, None] * w_
+            output2 = (alpha2 * 40)[:, None, None, None] * w_
             loss = torch.sqrt(torch.sum((tensor - output2)**2))
             print(f"i: {i}, loss: {loss.item()}")
             loss.backward()

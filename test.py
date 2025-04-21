@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 delta = 1
-epsilon = 0.1
+epsilon = 1
 max_r = 3
 min_r = -3
 
