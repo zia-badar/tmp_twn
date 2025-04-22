@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from paddle.base.libpaddle.eager.ops.legacy import momentum
 
 
 def Alpha(tensor, delta):
@@ -200,6 +199,13 @@ class TernaryConv2d(nn.Conv2d):
         # elif x > 0.5:
         #     return (x - 0.5) * (epsilon) + (1 - epsilon / 2)
 
+    def fw__(self, x):
+        _x = x
+        v1 = 0
+        v2 = -1
+        v3 = +1
+        return torch.logical_and(_x >= -0.5, _x <= 0.5) * v1 + (_x < -0.5) * v2 + (_x > 0.5) * v3
+
     def forward(self, x):
         tensor = self.weight.clone().detach()
 
@@ -226,8 +232,8 @@ class TernaryConv2d(nn.Conv2d):
             else:
                 alpha_delta = self.alpha_delta_network(torch.flatten(tensor, start_dim=1, end_dim=3))
             w_ = self.fw_(w)
-            # output2 = (alpha2 * rangew / (2 + self.epsilon))[:, None, None, None] * w_
-            output2 = (alpha2 * 40)[:, None, None, None] * w_
+            output2 = (alpha2 * rangew / (2 + self.epsilon))[:, None, None, None] * w_
+            # output2 = (alpha2 * 40)[:, None, None, None] * w_
             loss = torch.sqrt(torch.sum((tensor - output2)**2))
             print(f"i: {i}, loss: {loss.item()}")
             loss.backward()
@@ -235,6 +241,10 @@ class TernaryConv2d(nn.Conv2d):
             if break_var:
                 break
         self.alpha_delta_network.requires_grad_(False)
+
+        w__ = self.fw__(w_)
+        output3 = (alpha2 * rangew / (2 + self.epsilon))[:, None, None, None] * w__
+        loss3 = torch.sqrt(torch.sum((tensor - output3) ** 2))
 
         # range_cover_by_alpha = alpha2[0] * (0.1 / 2 + (up[0] - delta2[0]) * (0.1 / delta2[0])) + alpha2[0] * ( 0.1 / 2 + (delta2[0] - down[0]) * (0.1 / delta2[0]))
 
