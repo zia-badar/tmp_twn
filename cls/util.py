@@ -184,6 +184,7 @@ class TernaryConv2d(nn.Conv2d):
         #     out2 = self.alpha_delta_network(torch.flatten(tensor, start_dim=1, end_dim=3))
         # print("")
         self.epsilon = 0.1
+        self.break_var2 = False
         if self.weight.shape == torch.Size([1024, 8192, 1, 1]):
             return
 
@@ -250,10 +251,9 @@ class TernaryConv2d(nn.Conv2d):
         return torch.logical_and(_x >= -0.5, _x <= 0.5) * v1 + (_x < -0.5) * v2 + (_x > 0.5) * v3
 
     def forward(self, x):
-        break_var2 = False
-        if ((self.weight.shape != torch.Size([128, 3, 3, 3]) and self.weight.shape != torch.Size([128, 128, 3, 3])
+        if (self.break_var2 and (self.weight.shape != torch.Size([128, 3, 3, 3]) and self.weight.shape != torch.Size([128, 128, 3, 3])
             and self.weight.shape != torch.Size([256, 128, 3, 3]) and self.weight.shape != torch.Size([256, 256, 3, 3])
-            and self.weight.shape != torch.Size([512, 256, 3, 3]) and self.weight.shape == torch.Size([512, 512, 3, 3])) and break_var2):
+            and self.weight.shape != torch.Size([512, 256, 3, 3]) and self.weight.shape == torch.Size([512, 512, 3, 3]))):
             tensor = self.weight.clone().detach().cuda()
 
             # print("================================")
