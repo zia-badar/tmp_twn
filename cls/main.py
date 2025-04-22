@@ -180,7 +180,7 @@ def main():
     args = ParseArgs()
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
-    kwargs = {'num_workers': 0, 'pin_memory': True} if args.cuda else {}
+    kwargs = {'num_workers': 8, 'pin_memory': True} if args.cuda else {}
 
     logf = open(args.log_file_prefix+'_'+args.quan_mode+'.log', 'w')
     
@@ -230,7 +230,6 @@ def train(args,epoch_index,train_loader,model,optimizer,criterion, lr=None, logf
         optimizer.zero_grad()
 
         output = model(data)
-        print("================================")
         loss = criterion(output,target)
         loss.backward()
 
@@ -244,6 +243,12 @@ def train(args,epoch_index,train_loader,model,optimizer,criterion, lr=None, logf
             logf.write(logss + '\n')
             logf.flush()
 
+    print(f"conv1 lossf: {model.conv1_1.lossf}, lossn: {model.conv1_1.lossn_track}")
+    print(f"conv1_2 lossf: {model.conv1_2.lossf}, lossn: {model.conv1_2.lossn_track}")
+    print(f"conv2_1 lossf: {model.conv2_1.lossf}, lossn: {model.conv2_1.lossn_track}")
+    print(f"conv2_2 lossf: {model.conv2_2.lossf}, lossn: {model.conv2_2.lossn_track}")
+    print(f"conv3_1 lossf: {model.conv3_1.lossf}, lossn: {model.conv3_1.lossn_track}")
+    print(f"conv3_2 lossf: {model.conv3_2.lossf}, lossn: {model.conv3_2.lossn_track}")
 
 def test(args,model,test_loader,criterion, logf=None):
     model.eval()

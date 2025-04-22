@@ -162,9 +162,10 @@ class TernaryConv2d(nn.Conv2d):
         # _groups = 1
         # _bias = True
         self.lossn_track = []
-        tensor = self.weight.clone().detach()
+        self.lossf = None
+        tensor = self.weight.clone().detach().cuda()
         if tensor.shape[2] != 1:
-            self.alpha_delta_network = WeightNetwork(in_channels)
+            self.alpha_delta_network = WeightNetwork(in_channels).cuda()
         else:
             self.alpha_delta_network = nn.Sequential(
                 nn.Linear(in_channels, in_channels, bias=bias),
@@ -173,7 +174,7 @@ class TernaryConv2d(nn.Conv2d):
                 nn.LeakyReLU(),
                 nn.Linear(in_channels, 2, bias=bias),
                 nn.LeakyReLU()
-            )
+            ).cuda()
         self.alpha_delta_network.requires_grad_(False)
         self.optimizer = torch.optim.Adam(self.alpha_delta_network.parameters(), lr=0.01, weight_decay=0.0001)
         # input = torch.ones((16, in_channels, 3, 3))
@@ -183,6 +184,49 @@ class TernaryConv2d(nn.Conv2d):
         #     out2 = self.alpha_delta_network(torch.flatten(tensor, start_dim=1, end_dim=3))
         # print("")
         self.epsilon = 0.1
+        if self.weight.shape == torch.Size([1024, 8192, 1, 1]):
+            return
+
+        output = torch.zeros(tensor.size(), device=tensor.device)
+        delta = Delta(tensor)
+        alpha = Alpha(tensor, delta)
+        for i in range(tensor.size()[0]):
+            pos_one = (tensor[i] > delta[i]).to(torch.float32)
+            neg_one = -1 * (tensor[i] < -delta[i]).to(torch.float32)
+            out = torch.add(pos_one, neg_one)
+            output[i] = torch.add(output[i], torch.mul(out, alpha[i]))
+
+        lossf = torch.sum((tensor - output) ** 2)
+
+        up = torch.amax(tensor, dim=(1, 2, 3))
+        down = torch.amin(tensor, dim=(1, 2, 3))
+        rangew = up - down
+        self.alpha_delta_network.requires_grad_(True)
+        break_var = False
+        for i in range(1 if tensor.shape[2] != 1 else 0):
+            self.optimizer.zero_grad()
+            if tensor.shape[2] != 1:
+                w, alpha2 = self.alpha_delta_network(tensor)
+            else:
+                alpha_delta = self.alpha_delta_network(torch.flatten(tensor, start_dim=1, end_dim=3))
+            w_ = self.fw_(w)
+            output2 = (alpha2 * rangew / (2 + self.epsilon))[:, None, None, None] * w_
+            # output2 = (alpha2 * 40)[:, None, None, None] * w_
+            loss = torch.sum((tensor - output2) ** 2)
+            # print(f"i: {i}, loss: {loss.item()}, loss3: {1}")
+            loss.backward()
+            self.optimizer.step()
+            if break_var:
+                break
+        self.alpha_delta_network.requires_grad_(False)
+
+        with torch.no_grad():
+            w__ = self.fw__(w_)
+            output3 = (alpha2 * rangew / (2 + self.epsilon))[:, None, None, None] * w__
+            loss3 = torch.sum((tensor - output3) ** 2)
+
+        print(f"lossf: {lossf.item()}, loss3: {loss3.item()}")
+        print("")
 
     def fw_(self, x):
         _x = 3 * x
@@ -206,11 +250,13 @@ class TernaryConv2d(nn.Conv2d):
         return torch.logical_and(_x >= -0.5, _x <= 0.5) * v1 + (_x < -0.5) * v2 + (_x > 0.5) * v3
 
     def forward(self, x):
+        break_var2 = False
         if ((self.weight.shape != torch.Size([128, 3, 3, 3]) and self.weight.shape != torch.Size([128, 128, 3, 3])
-            and self.weight.shape != torch.Size([256, 128, 3, 3])) and self.weight.shape != torch.Size([256, 256, 3, 3])
-            and self.weight.shape != torch.Size([512, 256, 3, 3])) and self.weight.shape != torch.Size([512, 512, 3, 3]):
-            tensor = self.weight.clone().detach()
+            and self.weight.shape != torch.Size([256, 128, 3, 3]) and self.weight.shape != torch.Size([256, 256, 3, 3])
+            and self.weight.shape != torch.Size([512, 256, 3, 3]) and self.weight.shape == torch.Size([512, 512, 3, 3])) and break_var2):
+            tensor = self.weight.clone().detach().cuda()
 
+            # print("================================")
             output = torch.zeros(tensor.size(), device=tensor.device)
             delta = Delta(tensor)
             alpha = Alpha(tensor,delta)
@@ -227,7 +273,7 @@ class TernaryConv2d(nn.Conv2d):
             rangew = up - down
             self.alpha_delta_network.requires_grad_(True)
             break_var = False
-            for i in range(200000 if tensor.shape[2] != 1 else 20):
+            for i in range(200000 if tensor.shape[2] != 1 else 0):
                 self.optimizer.zero_grad()
                 if tensor.shape[2] != 1:
                     w, alpha2 = self.alpha_delta_network(tensor)
@@ -241,27 +287,33 @@ class TernaryConv2d(nn.Conv2d):
                     w__ = self.fw__(w_)
                     output3 = (alpha2 * rangew / (2 + self.epsilon))[:, None, None, None] * w__
                     loss3 = torch.sum((tensor - output3) ** 2)
-                print(f"i: {i}, loss: {loss.item()}, loss3: {loss3.item()}")
+                print(f"i: {i}, lossf: {lossf.item()}, loss: {loss.item()}, loss3: {loss3.item()}")
                 loss.backward()
                 self.optimizer.step()
                 if break_var:
                     break
             self.alpha_delta_network.requires_grad_(False)
 
+            with torch.no_grad():
+                w__ = self.fw__(w_)
+                output3 = (alpha2 * rangew / (2 + self.epsilon))[:, None, None, None] * w__
+                loss3 = torch.sum((tensor - output3) ** 2)
 
             # range_cover_by_alpha = alpha2[0] * (0.1 / 2 + (up[0] - delta2[0]) * (0.1 / delta2[0])) + alpha2[0] * ( 0.1 / 2 + (delta2[0] - down[0]) * (0.1 / delta2[0]))
+            #
+            # output3 = torch.zeros(tensor.size(), device=tensor.device)
+            # for i in range(tensor.size()[0]):
+            #     pos_one = (tensor[i] > delta2[i]).to(torch.float32)
+            #     neg_one = -1 * (tensor[i] < -delta2[i]).to(torch.float32)
+            #     out = torch.add(pos_one, neg_one)
+            #     output3[i] = torch.add(output3[i],torch.mul(out, alpha2[i]))
+            #
+            # loss3 = torch.sqrt(torch.sum((tensor - output3)**2))
 
-            output3 = torch.zeros(tensor.size(), device=tensor.device)
-            for i in range(tensor.size()[0]):
-                pos_one = (tensor[i] > delta2[i]).to(torch.float32)
-                neg_one = -1 * (tensor[i] < -delta2[i]).to(torch.float32)
-                out = torch.add(pos_one, neg_one)
-                output3[i] = torch.add(output3[i],torch.mul(out, alpha2[i]))
-
-            loss3 = torch.sqrt(torch.sum((tensor - output3)**2))
-
-            self.lossn_track.append(loss.item())
-            print(f"lossf: {lossf.item()}, lossn: {self.lossn_track}")
+            self.lossn_track.append(loss3.item())
+            self.lossf = lossf.item()
+            # print(f"lossf: {lossf.item()}, lossn: {self.lossn_track}")
+            # print("===============")
 
         return Conv2DFunctionQUAN.apply(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups, 'TERANRY')
     
