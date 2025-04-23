@@ -130,7 +130,7 @@ class WeightNetwork(nn.Module):
         self.a9 = nn.Tanh()
 
         # self.a10 = nn.Flatten()
-        self.a11 = nn.Linear(3*3, 1, bias=True)
+        self.a11 = nn.Linear(4*3*3, 1, bias=True)
         self.a13 = nn.Sigmoid()
 
     def forward(self, x):
@@ -141,14 +141,14 @@ class WeightNetwork(nn.Module):
         y = self.a4(y)
         y = self.a41(y)
         y = self.a42(y)
-        y = self.a43(y)
-        y = self.a5(y)
+        y43 = self.a43(y)
+        y = self.a5(y43)
         y = self.a6(y)
         y = self.a7(y)
         # y = self.a8(y)
         o1 = self.a9(y)
         # y = self.a10(o1)
-        y = self.a11(y)
+        y = self.a11(y43)
         o2 = self.a13(y)
         return o1.reshape(x.shape[0], self.in_channels, 3, 3), torch.mean(o2.reshape(x.shape[0], -1), dim=1)
 
@@ -204,33 +204,36 @@ class TernaryConv2d(nn.Conv2d):
         rangew = up - down
         self.alpha_delta_network.requires_grad_(True)
         break_var = False
-        for i in range(1 if tensor.shape[2] != 1 else 0):
-            self.optimizer.zero_grad()
-            if tensor.shape[2] != 1:
-                w, alpha2 = self.alpha_delta_network(tensor)
-            else:
-                alpha_delta = self.alpha_delta_network(torch.flatten(tensor, start_dim=1, end_dim=3))
-            w_ = self.fw_(w)
-            output2 = (alpha2 * rangew / (2 + self.epsilon))[:, None, None, None] * w_
-            # output2 = (alpha2 * 40)[:, None, None, None] * w_
-            loss = torch.sum((tensor - output2) ** 2)
-            # print(f"i: {i}, loss: {loss.item()}, loss3: {1}")
-            loss.backward()
-            self.optimizer.step()
-            if break_var:
-                break
+        if ((self.weight.shape != torch.Size([128, 3, 3, 3]) and self.weight.shape != torch.Size([128, 128, 3, 3])
+                                 and self.weight.shape != torch.Size([256, 128, 3, 3]) and self.weight.shape != torch.Size([256, 256, 3, 3])
+                                 and self.weight.shape != torch.Size([512, 256, 3, 3]) and self.weight.shape == torch.Size([512, 512, 3, 3]))):
+            for i in range(1 if tensor.shape[2] != 1 else 0):
+                self.optimizer.zero_grad()
+                if tensor.shape[2] != 1:
+                    w, alpha2 = self.alpha_delta_network(tensor)
+                else:
+                    alpha_delta = self.alpha_delta_network(torch.flatten(tensor, start_dim=1, end_dim=3))
+                w_ = self.fw_(w)
+                output2 = (alpha2 * rangew / (2 + self.epsilon))[:, None, None, None] * w_
+                # output2 = (alpha2 * 40)[:, None, None, None] * w_
+                loss = torch.sum((tensor - output2) ** 2)
+
+                with torch.no_grad():
+                    w__ = self.fw__(w_)
+                    output3 = (alpha2 * rangew / (2 + self.epsilon))[:, None, None, None] * w__
+                    loss3 = torch.sum((tensor - output3) ** 2)
+                print(f"lossf: {lossf.item()}, loss3: {loss3.item()}")
+                # print(f"i: {i}, loss: {loss.item()}, loss3: {1}")
+                loss.backward()
+                self.optimizer.step()
+                if break_var:
+                    break
         self.alpha_delta_network.requires_grad_(False)
 
-        with torch.no_grad():
-            w__ = self.fw__(w_)
-            output3 = (alpha2 * rangew / (2 + self.epsilon))[:, None, None, None] * w__
-            loss3 = torch.sum((tensor - output3) ** 2)
-
-        print(f"lossf: {lossf.item()}, loss3: {loss3.item()}")
         print("")
 
     def fw_(self, x):
-        _x = 3 * x
+        _x = 1.5 * x
         v1 = _x * self.epsilon
         v2 = (_x + 0.5) * (self.epsilon) + (-1 + self.epsilon / 2)
         v3 = (_x - 0.5) * (self.epsilon) + (1 - self.epsilon / 2)

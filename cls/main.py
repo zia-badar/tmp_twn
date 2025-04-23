@@ -180,7 +180,7 @@ def main():
     args = ParseArgs()
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
-    kwargs = {'num_workers': 8, 'pin_memory': True} if args.cuda else {}
+    kwargs = {'num_workers': 20, 'pin_memory': True} if args.cuda else {}
 
     logf = open(args.log_file_prefix+'_'+args.quan_mode+'.log', 'w')
     
@@ -250,7 +250,7 @@ def train(args,epoch_index,train_loader,model,optimizer,criterion, lr=None, logf
     print(f"conv3_1 lossf: {model.conv3_1.lossf}, lossn: {model.conv3_1.lossn_track}")
     print(f"conv3_2 lossf: {model.conv3_2.lossf}, lossn: {model.conv3_2.lossn_track}")
 
-    if epoch_index >= 10:
+    if epoch_index >= 100:
         model.conv3_2.break_var2 = True
 
 def test(args,model,test_loader,criterion, logf=None):
