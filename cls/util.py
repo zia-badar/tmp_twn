@@ -109,15 +109,14 @@ class WeightNetwork(nn.Module):
         self.in_channels = in_channels
         self.a1 = nn.Flatten(start_dim=0, end_dim=1)
         self.a1_1 = nn.Flatten(start_dim=1, end_dim=2)
-        self.a2 = nn.Linear(3*3, out_features=4*3*3, bias=True)
-        self.a3 = nn.BatchNorm1d(num_features=4*3*3)
+        self.a2 = nn.Linear(3*3, out_features=2*3*3, bias=True)
+        self.a3 = nn.BatchNorm1d(num_features=2*3*3)
         self.a4 = nn.LeakyReLU()
-        self.a41 = nn.Linear(4*3*3, out_features=4*3*3, bias=True)
-        self.a42 = nn.BatchNorm1d(num_features=4*3*3)
+        self.a41 = nn.Linear(2*3*3, out_features=2*3*3, bias=True)
+        self.a42 = nn.BatchNorm1d(num_features=2*3*3)
         self.a43 = nn.LeakyReLU()
-        self.a5 = nn.Linear(4*3*3, out_features=3*3, bias=True)
+        self.a5 = nn.Linear(2*3*3, out_features=3*3, bias=True)
         self.a6 = nn.BatchNorm1d(num_features=3*3)
-        self.a7 = nn.LeakyReLU()
 
         # self.a1 = nn.Conv2d(in_channels, in_channels, 2, stride=1, padding=0, dilation=1, groups=1, bias=True)
         # self.a2 = nn.BatchNorm2d(num_features=in_channels)
@@ -130,7 +129,7 @@ class WeightNetwork(nn.Module):
         self.a9 = nn.Tanh()
 
         # self.a10 = nn.Flatten()
-        self.a11 = nn.Linear(4*3*3, 1, bias=True)
+        self.a11 = nn.Linear(2*3*3, 1, bias=True)
         self.a13 = nn.Sigmoid()
 
     def forward(self, x):
@@ -144,8 +143,6 @@ class WeightNetwork(nn.Module):
         y43 = self.a43(y)
         y = self.a5(y43)
         y = self.a6(y)
-        y = self.a7(y)
-        # y = self.a8(y)
         o1 = self.a9(y)
         # y = self.a10(o1)
         y = self.a11(y43)
@@ -207,7 +204,7 @@ class TernaryConv2d(nn.Conv2d):
         if ((self.weight.shape != torch.Size([128, 3, 3, 3]) and self.weight.shape != torch.Size([128, 128, 3, 3])
                                  and self.weight.shape != torch.Size([256, 128, 3, 3]) and self.weight.shape != torch.Size([256, 256, 3, 3])
                                  and self.weight.shape != torch.Size([512, 256, 3, 3]) and self.weight.shape == torch.Size([512, 512, 3, 3]))):
-            for i in range(1 if tensor.shape[2] != 1 else 0):
+            for i in range(100000 if tensor.shape[2] != 1 else 0):
                 self.optimizer.zero_grad()
                 if tensor.shape[2] != 1:
                     w, alpha2 = self.alpha_delta_network(tensor)
